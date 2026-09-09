@@ -17,6 +17,7 @@ provenance is not evidence, so the report format refuses to carry one.
 
 from __future__ import annotations
 
+from pyexpat import model
 import re
 import shutil
 import subprocess
@@ -24,6 +25,9 @@ from pathlib import Path
 from typing import Any
 import pdb
 import json
+
+from matplotlib import text
+from sympy import root
 
 # ---------------------------------------------------------------------------
 # Small helpers. These are given to students; the exercise is the probes.
@@ -66,153 +70,6 @@ def unknown(source: str, why: str) -> dict[str, Any]:
     """
     return {"value": None, "source": source, "status": "unknown", "detail": why}
 
-<<<<<<< HEAD:lab01/probes.py
-=======
-
-# ---------------------------------------------------------------------------
-# YOUR WORK STARTS HERE.
-#
-# Eight functions below raise NotImplementedError. Replace each body. Run
-#
-#     python3 -m pytest tests/test_public.py -v
-#
-# as you go — the tests run against fake machines in tests/fixtures/, so they
-# work on your laptop before you ever touch a board.
-#
-# Two rules the tests enforce, and the graders enforce again:
-#
-#   1. Read only from `root`. Never hardcode "/". A probe that ignores its root
-#      argument cannot be tested, and a measurement nobody can test is a
-#      measurement nobody should believe.
-#   2. When you cannot determine something, return unknown(source, why). Never
-#      return 0, "", or a plausible default. `unknown` is a correct answer and
-#      it is marked as one. A fabricated 0 is not, and it is marked as that.
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# The probes.
-# ---------------------------------------------------------------------------
-
-
-def probe_module_model(root: Path = Path("/")) -> dict[str, Any]:
-    """Which board is this?
-
-    The device tree model string is the most trustworthy identity on a Jetson —
-    it comes from the hardware description the bootloader handed the kernel,
-    not from anything installed afterwards.
-    """
-
-    # TODO: implement this probe.
-    # Read /proc/device-tree/model with the read_text helper.
-    # That node is NUL-terminated; read_text already strips it for you.
-    # Return {'value': <the string>, 'source': src, 'status': 'ok'},
-    # or unknown(src, <why>) if the node is not there.
-    src = "/proc/device-tree/model"
-    value = read_text(root, src)
-
-    if value is None:
-        return unknown(src, "Node is not there.")
-    else:
-        return {'value': value, 'source': src, 'status': 'ok'}
-
-def probe_memory_total_kb(root: Path = Path("/")) -> dict[str, Any]:
-    """How much memory is there, in kB, as the kernel counts it?
-
-    This will read a little under 8 GB on an 8 GB board. That gap is not a
-    fault: the carveout for the GPU and other hardware is taken before Linux
-    ever sees the pool. Students are expected to notice and to explain it in
-    their report rather than round it up.
-    """
-
-    # TODO: implement this probe.
-    # Read /proc/meminfo and find the MemTotal line.
-    # Anchor your match to the start of a line, and return an int of kB,
-    # not the string and not the whole line.
-    src = "/proc/meminfo"
-    meminf = read_text(root, src)
-
-    if meminf is None:
-        return unknown(src, "Meminfo file is not there.")
-    else:
-        m = re.search(r"^MemTotal:\s+(\d+)\s+kB", meminf, re.MULTILINE)
-        return {"value": int(m.group(1)), "source": src, "status": "ok"}
-
-def probe_root_source(root: Path = Path("/")) -> dict[str, Any]:
-    """What device is the root filesystem actually mounted from?
-    This is the probe the lab is built around. A unit that boots from the SD
-    card works, boots, and passes every casual inspection — and then runs the
-    semester's benchmarks against a card an order of magnitude slower than the
-    NVMe sitting unused in the slot. The failure is silent, which is exactly
-    why it has to be a command rather than an assumption.
-
-    /proc/mounts is preferred over `findmnt` because it needs no external
-    binary and no elevation, and because it is what findmnt reads anyway.
-    """
-
-    # TODO: implement this probe.
-    # Read /proc/mounts. Each line is: device mountpoint fstype options ...
-    # Find the line whose mountpoint is exactly '/' — it is not always first,
-    # and '/var' is not '/'.
-    # Return 'value' (the device) and also 'kind', one of:
-    #     'nvme'               device starts with /dev/nvme
-    #     'removable_or_sata'  device starts with /dev/mmcblk or /dev/sd
-    #     'other'              anything else, e.g. a tmpfs or NFS root
-    # The 'kind' field is what the verdict in report.py branches on.
-    src = "/proc/mounts"
-    text = read_text(root, src)
-
-    if text is None:
-        return unknown(src, "Mounts file is not there.")
-
-    for line in text.splitlines():
-        parts = line.split()
-        if len(parts) < 2:
-            continue
-        device, mountpoint = parts[0], parts[1]
-        if mountpoint == "/":
-            if device.startswith("/dev/nvme"):
-                kind = "nvme"
-            elif device.startswith("/dev/mmcblk") or device.startswith("/dev/sd"):
-                kind = "ssd"
-            else:
-                kind = "other"
-            break
-    else:
-        return unknown(src, "No root mountpoint found.")
-
-    return {"value": device, "kind": kind, "source": src, "status": "ok"}
-
-
-def probe_nvme_present(root: Path = Path("/")) -> dict[str, Any]:
-    """Is there an NVMe device visible as a block device at all?
-
-    Deliberately separate from probe_root_source. A machine can have an NVMe
-    fitted and still boot from the SD card, and telling those two states apart
-    is what lets the troubleshooting tree in the lab guide send a student to
-    the right branch.
-    """
-
-    # TODO: implement this probe.
-    # Does <root>/sys/block/nvme0n1 exist?
-    # This must NOT look at what the root filesystem is mounted from. A board
-    # can have an NVMe fitted and still boot from the SD card, and telling
-    # those two apart is the entire point of the lab.
-    # Return 'value' as a bool, plus 'model' from
-    # /sys/block/nvme0n1/device/model if you can read it, else None.
-    src = "/sys/block/nvme0n1"
-    bool = read_text(root, src)
-    model = read_text(root, f"{src}/device/model")
-
-    if bool is None:
-        return {"value": False, "model": None, "source": src, "status": "ok"}
-    else if bool is False:
-        return {"value": True, "model": model, "source": src, "status": "ok"}
-    else:
-        return {"value": True, "model": model, "source": src, "status": "ok"}
-
-
->>>>>>> 6391352 (Lab 01 progress):lab01/starter/enee459l/probes.py
 # LnkSta/LnkCap lines look like:
 #   LnkSta: Speed 8GT/s, Width x4, TrErr- Train- SlotClk+ DLActive- ...
 #   LnkCap: Port #0, Speed 16GT/s, Width x4, ASPM L1, Exit Latency L1 <64us
@@ -290,8 +147,15 @@ def probe_memory_total_kb(root: Path = Path("/")) -> dict[str, Any]:
     ever sees the pool. Students are expected to notice and to explain it in
     their report rather than round it up.
     """
-    
-    return {"value": int(m.group(1)), "source": src, "status": "ok"}
+    src = "/proc/meminfo"
+    meminf = read_text(root, src)
+
+    if meminf is None:
+        return unknown(src, "Meminfo file is not there.")
+    else:
+        m = re.search(r"^MemTotal:\s+(\d+)\s+kB", meminf, re.MULTILINE)
+        return {"value": int(m.group(1)), "source": src, "status": "ok"}
+
 
 
 def probe_root_source(root: Path = Path("/")) -> dict[str, Any]:
@@ -307,7 +171,32 @@ def probe_root_source(root: Path = Path("/")) -> dict[str, Any]:
     binary and no elevation, and because it is what findmnt reads anyway.
     """
     
-    return unknown(src, "no root mount entry found in mount table")
+    src = "/proc/mounts"
+    text = read_text(root, src)
+
+    if text is None:
+        return unknown(src, "Mounts file is not there.")
+
+
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        device, mountpoint = parts[0], parts[1]
+        if mountpoint == "/":
+           if device.startswith("/dev/nvme"):
+               kind = "nvme"
+           elif device.startswith("/dev/mmcblk") or device.startswith("/dev/sd"):
+               kind = "ssd"
+           else:
+               kind = "other"
+           break
+    else:
+        return unknown(src, "No root mountpoint found.")
+
+
+    return {"value": device, "kind": kind, "source": src, "status": "ok"}
+
 
 
 def probe_nvme_present(root: Path = Path("/")) -> dict[str, Any]:
@@ -318,13 +207,16 @@ def probe_nvme_present(root: Path = Path("/")) -> dict[str, Any]:
     is what lets the troubleshooting tree in the lab guide send a student to
     the right branch.
     """
+    src = "/sys/block/nvme0n1"
+    base = Path(root) / "sys/block/nvme0n1"
+    model = read_text(root, f"{src}/device/model")
+
+    if not base.exists() or not base.is_dir():
+        return {"value": False, "source": src, "status": "ok", "model": None,
+        }
     
-    return {
-        "value": ,
-        "model": ,
-        "source": ,
-        "status": "ok",
-    }
+    return {"value": True, "model": model, "source": src, "status": "ok"}
+
 
 
 def probe_pcie_link(root: Path = Path("/"), lspci_output: str | None = None) -> dict[str, Any]:
@@ -338,13 +230,44 @@ def probe_pcie_link(root: Path = Path("/"), lspci_output: str | None = None) -> 
     `lspci_output` exists so the tests can drive this without root or hardware.
     In normal use it is None and the probe shells out.
     """
-        
+
+    src = "lspci -vv"
+
+    if lspci_output is None:
+        lspci_output = run(["lspci", "-vv"])
+
+    if lspci_output is None:
+        return unknown(src, "Unable to read lspci output.")
+
+    negotiated_line = None
+    capability_line = None
+
+    for line in lspci_output.splitlines():
+        if "LnkSta:" in line:
+            negotiated_line = line
+        elif "LnkCap:" in line:
+            capability_line = line
+
+    if negotiated_line is None:
+        return unknown(src, "LnkSta line not found.")
+
+    if capability_line is None:
+        return unknown(src, "LnkCap line not found.")
+
+    negotiated = _parse_link_line(negotiated_line)
+    capability = _parse_link_line(capability_line)
+
+    interpretation = generate_interpretation_string(
+        negotiated["gts"],
+        capability["gts"],
+    )
+
     return {
-        "value":,
-        "negotiated": ,
-        "capability": ,
-        "interpretation": ,
-        "source": ,
+        "value": negotiated["gts"],
+        "negotiated": negotiated,
+        "capability": capability,
+        "interpretation": interpretation,
+        "source": src,
         "status": "ok",
     }
 
@@ -357,10 +280,35 @@ def probe_thermal_zones(root: Path = Path("/")) -> dict[str, Any]:
     than once, and it is a good, cheap lesson in reading units before reading
     numbers.
     """
+    src = "/sys/class/thermal/thermal_zone*/temp"
+    base = Path(root) / "sys/class/thermal"
+
+    zones = []
+
+    for zone in sorted(base.glob("thermal_zone*")):
+        type_text = read_text(root, f"/sys/class/thermal/{zone.name}/type")
+        temp_text = read_text(root, f"/sys/class/thermal/{zone.name}/temp")
+
+        if type_text is None or temp_text is None:
+            return unknown(src, f"Unable to read thermal zone {zone.name}.")
+
+        try:
+            temp = int(temp_text) / 1000
+        except ValueError:
+            return unknown(src, f"Invalid temperature in {zone.name}.")
+
+        zones.append({
+            "type": type_text,
+            "temp_c": temp,
+        })
+
+    if not zones:
+        return unknown(src, "No thermal zones found.")
+
     return {
-        "value": ,
-        "zones": ,
-        "source": ,
+        "value": max(zone["temp_c"] for zone in zones),
+        "zones": zones,
+        "source": src,
         "status": "ok",
     }
 
@@ -373,10 +321,32 @@ def probe_power_mode(root: Path = Path("/"), nvpmodel_output: str | None = None)
     same model are usually reporting different power modes, and without this
     field there is no way to find that out after the fact.
     """
+    src = "nvpmodel -q"
+
+    if nvpmodel_output is None:
+        nvpmodel_output = run(["nvpmodel", "-q"])
+
+    if nvpmodel_output is None:
+        return unknown(src, "Unable to read nvpmodel output.")
+
+    match = re.search(r"NV Power Mode:\s*(.+)", nvpmodel_output)
+
+    if match is None:
+        return unknown(src, "Power mode name not found.")
+
+    mode_name = match.group(1).strip()
+
+    mode_match = re.search(r"^\s*(\d+)\s*$", mode_name, re.MULTILINE)
+
+    if mode_match is None:
+        return unknown(src, "Power mode ID not found.")
+
+    mode_id = int(mode_match.group(1))
+
     return {
-        "value": ,
-        "mode_id": ,
-        "source": ,
+        "value": mode_id,
+        "mode_id": mode_id,
+        "source": src,
         "status": "ok",
     }
 
