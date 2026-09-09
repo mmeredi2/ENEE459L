@@ -262,14 +262,7 @@ def probe_pcie_link(root: Path = Path("/"), lspci_output: str | None = None) -> 
         capability["gts"],
     )
 
-    return {
-        "value": negotiated["gts"],
-        "negotiated": negotiated,
-        "capability": capability,
-        "interpretation": interpretation,
-        "source": src,
-        "status": "ok",
-    }
+    return {"value": negotiated["gts"], "negotiated": negotiated, "capability": capability, "interpretation": interpretation, "source": src, "status": "ok"}
 
 
 def probe_thermal_zones(root: Path = Path("/")) -> dict[str, Any]:
@@ -291,12 +284,10 @@ def probe_thermal_zones(root: Path = Path("/")) -> dict[str, Any]:
 
         if type_text is None or temp_text is None:
             return unknown(src, f"Unable to read thermal zone {zone.name}.")
-
         try:
             temp = int(temp_text) / 1000
         except ValueError:
             return unknown(src, f"Invalid temperature in {zone.name}.")
-
         zones.append({
             "type": type_text,
             "temp_c": temp,
@@ -304,13 +295,9 @@ def probe_thermal_zones(root: Path = Path("/")) -> dict[str, Any]:
 
     if not zones:
         return unknown(src, "No thermal zones found.")
-
+    
     return {
-        "value": max(zone["temp_c"] for zone in zones),
-        "zones": zones,
-        "source": src,
-        "status": "ok",
-    }
+        "value": max(zone["temp_c"] for zone in zones), "zones": zones, "source": src, "status": "ok"}
 
 
 def probe_power_mode(root: Path = Path("/"), nvpmodel_output: str | None = None) -> dict[str, Any]:
@@ -335,7 +322,6 @@ def probe_power_mode(root: Path = Path("/"), nvpmodel_output: str | None = None)
         return unknown(src, "Power mode name not found.")
 
     mode_name = match.group(1).strip()
-
     mode_match = re.search(r"^\s*(\d+)\s*$", mode_name, re.MULTILINE)
 
     if mode_match is None:
@@ -343,12 +329,7 @@ def probe_power_mode(root: Path = Path("/"), nvpmodel_output: str | None = None)
 
     mode_id = int(mode_match.group(1))
 
-    return {
-        "value": mode_id,
-        "mode_id": mode_id,
-        "source": src,
-        "status": "ok",
-    }
+    return {"value": mode_id, "mode_id": mode_id, "source": src, "status": "ok"}
 
 ## for debugging - uncomment the following lines for debugging.
 # if __name__ == "__main__":
