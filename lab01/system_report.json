@@ -40,19 +40,19 @@
         "status": "ok"
     },
     "thermal_zones": {
-        "value": 53.0,
+        "value": 53.343,
         "zones": [
             {
                 "type": "cpu-thermal",
-                "temp_c": 51.937
+                "temp_c": 52.312
             },
             {
                 "type": "gpu-thermal",
-                "temp_c": 53.0
+                "temp_c": 53.156
             },
             {
                 "type": "soc0-thermal",
-                "temp_c": 52.437
+                "temp_c": 52.625
             },
             {
                 "type": "soc1-thermal",
@@ -60,11 +60,11 @@
             },
             {
                 "type": "soc2-thermal",
-                "temp_c": 51.5
+                "temp_c": 51.687
             },
             {
                 "type": "tj-thermal",
-                "temp_c": 52.937
+                "temp_c": 53.343
             }
         ],
         "source": "/sys/class/thermal/thermal_zone*/temp",
