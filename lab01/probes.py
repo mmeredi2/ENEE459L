@@ -44,7 +44,7 @@ def read_text(root: Path, rel: str) -> str | None:
     p = Path(root) / rel.lstrip("/")
     try:
         return p.read_text(errors="replace").strip("\x00").strip()
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError, TypeError):
         return None
 
 
@@ -97,8 +97,8 @@ def _parse_link_line(line: str) -> dict[str, Any]:
         "gen": _GEN_BY_GTS.get(gts) if gts is not None else None,
     }
 
-def generate_interpretation_string(neg_speed, cap_speed):
-    if cap_speed > neg_speed:
+def generate_interpretation_string(negotiated, capability):
+    if capability['gts'] > negotiated['gts']:
         interpretation = (
             f"drive capable of Gen{capability['gen']}, link running at "
             f"Gen{negotiated['gen']} — expected on this carrier board, "
@@ -154,6 +154,8 @@ def probe_memory_total_kb(root: Path = Path("/")) -> dict[str, Any]:
         return unknown(src, "Meminfo file is not there.")
     else:
         m = re.search(r"^MemTotal:\s+(\d+)\s+kB", meminf, re.MULTILINE)
+        if m is None:
+            return unknown(src, "MemTotal line not found.")
         return {"value": int(m.group(1)), "source": src, "status": "ok"}
 
 
@@ -175,7 +177,7 @@ def probe_root_source(root: Path = Path("/")) -> dict[str, Any]:
     text = read_text(root, src)
 
     if text is None:
-        return unknown(src, "Mounts file is not there.")
+        return unknown(src, "Mount file not found.")
 
 
     for line in text.splitlines():
@@ -192,7 +194,7 @@ def probe_root_source(root: Path = Path("/")) -> dict[str, Any]:
                kind = "other"
            break
     else:
-        return unknown(src, "No root mountpoint found.")
+        return unknown(src, "No mountpoint found.")
 
 
     return {"value": device, "kind": kind, "source": src, "status": "ok"}
@@ -209,11 +211,11 @@ def probe_nvme_present(root: Path = Path("/")) -> dict[str, Any]:
     """
     src = "/sys/block/nvme0n1"
     base = Path(root) / "sys/block/nvme0n1"
-    model = read_text(root, f"{src}/device/model")
 
     if not base.exists() or not base.is_dir():
-        return {"value": False, "source": src, "status": "ok", "model": None,
-        }
+        return {"value": False, "source": src, "status": "ok", "model": None}
+
+    model = read_text(root, f"{src}/device/model")
     
     return {"value": True, "model": model, "source": src, "status": "ok"}
 
@@ -243,6 +245,12 @@ def probe_pcie_link(root: Path = Path("/"), lspci_output: str | None = None) -> 
     capability_line = None
 
     for line in lspci_output.splitlines():
+        if line and not line[0].isspace():
+            block = "Non-Volatile memory controller" in line
+            continue
+        if not block:
+            continue
+
         if "LnkSta:" in line:
             negotiated_line = line
         elif "LnkCap:" in line:
@@ -257,19 +265,9 @@ def probe_pcie_link(root: Path = Path("/"), lspci_output: str | None = None) -> 
     negotiated = _parse_link_line(negotiated_line)
     capability = _parse_link_line(capability_line)
 
-    interpretation = generate_interpretation_string(
-        negotiated["gts"],
-        capability["gts"],
-    )
+    interpretation = generate_interpretation_string(negotiated, capability,)
 
-    return {
-        "value": negotiated["gts"],
-        "negotiated": negotiated,
-        "capability": capability,
-        "interpretation": interpretation,
-        "source": src,
-        "status": "ok",
-    }
+    return {"value": negotiated["raw"], "negotiated": negotiated, "capability": capability, "interpretation": interpretation, "source": src, "status": "ok"}
 
 
 def probe_thermal_zones(root: Path = Path("/")) -> dict[str, Any]:
@@ -290,27 +288,18 @@ def probe_thermal_zones(root: Path = Path("/")) -> dict[str, Any]:
         temp_text = read_text(root, f"/sys/class/thermal/{zone.name}/temp")
 
         if type_text is None or temp_text is None:
-            return unknown(src, f"Unable to read thermal zone {zone.name}.")
-
+            continue
         try:
             temp = int(temp_text) / 1000
         except ValueError:
-            return unknown(src, f"Invalid temperature in {zone.name}.")
-
-        zones.append({
-            "type": type_text,
-            "temp_c": temp,
-        })
+            continue
+        zones.append({"type": type_text, "temp_c": temp,})
 
     if not zones:
         return unknown(src, "No thermal zones found.")
-
+    
     return {
-        "value": max(zone["temp_c"] for zone in zones),
-        "zones": zones,
-        "source": src,
-        "status": "ok",
-    }
+        "value": max(zone["temp_c"] for zone in zones), "zones": zones, "source": src, "status": "ok"}
 
 
 def probe_power_mode(root: Path = Path("/"), nvpmodel_output: str | None = None) -> dict[str, Any]:
@@ -335,20 +324,14 @@ def probe_power_mode(root: Path = Path("/"), nvpmodel_output: str | None = None)
         return unknown(src, "Power mode name not found.")
 
     mode_name = match.group(1).strip()
-
-    mode_match = re.search(r"^\s*(\d+)\s*$", mode_name, re.MULTILINE)
+    mode_match = re.search(r"^\s*(\d+)\s*$", nvpmodel_output, re.MULTILINE)
 
     if mode_match is None:
         return unknown(src, "Power mode ID not found.")
 
     mode_id = int(mode_match.group(1))
 
-    return {
-        "value": mode_id,
-        "mode_id": mode_id,
-        "source": src,
-        "status": "ok",
-    }
+    return {"value": mode_name, "mode_id": mode_id, "source": src, "status": "ok"}
 
 ## for debugging - uncomment the following lines for debugging.
 # if __name__ == "__main__":
