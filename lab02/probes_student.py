@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from turtle import right
 from typing import Any
 import sys
 
@@ -36,27 +37,168 @@ def _split_local_version(raw: str) -> dict[str, Any]:
 
 def probe_torch(env: Env) -> dict[str, Any]:
     #write your code here
-    pass
+    src = "import torch"
+
+    try:
+        torch = env.importer("torch")
+    except Exception as e:
+        unknown(src, f"torch is not importable: {e}")
+
+    raw = getattr_path(torch, "__version__")
+    if raw:
+        version = _split_local_version(str(raw))
+    else:
+        version = None
+
+    available = getattr_path(torch, "cuda.is_available")
+    if callable(available):
+        cuda_available = bool(available())
+    else:
+        cuda_available = None
+
+    name = getattr_path(torch, "cuda.get_device_name")
+    device = None
+    if cuda_available is True:
+        if callable(name):
+            device = str(name(0))
+        else:
+            device = None
+
+    out = {
+        "value": raw, 
+        "source": src, 
+        "status": "ok" if raw else "unknown",  
+        "version": version, 
+        "cuda_available": cuda_available, 
+        "cuda_version": getattr_path(torch, "version.cuda"),
+        "device": device
+    }
+
+    if not raw:
+        out["detail"] = "torch imported but exposes no __version__"
+        return out
+    else:
+        if version:
+            nv = version["nvidia_build"]
+        else:
+            nv = False
+
+        if cuda_available is True:
+            out["diagnosis"] = "torch is installed and sees the GPU"
+        elif cuda_available is False:
+            out["diagnosis"] = "torch is installed but does not expose torch.cuda.is_available"
+        elif nv is True:
+            out["diagnosis"] = "this is an NVIDIA build but it cannot see the GPU — the wheel is right, so look at the driver stack, the container, or the user’s groups, not at pip"
+        else:
+            out["diagnosis"] = "this wheel has no NVIDIA local version tag and cannot see the GPU — it is almost certainly a stock PyPI wheel and must be replaced from the Jetson index"
+        return out
 
 
 def probe_cuda(env: Env) -> dict[str, Any]:
     #write your code here
-    pass
+    src = "/usr/local/cuda/version.json"
+    raw = read_text(env.root, src)
+
+    if raw is None:
+        unknown(src, "CUDA toolkit manifest absent — no toolkit installed at /usr/local/cuda")
+
+    try:
+        data = json.loads(raw)
+    except ValueError:
+            unknown(src, "CUDA toolkit manifest is present but not valid JSON")
+
+    version = data.get("cuda",{}).get("version")
+    if not version:
+        unknown(src, "manifest present but names no cuda version")
+
+    return {
+        "value": version,
+        "source": src,
+        "status": "ok",
+        "version": major_minor(version)
+    }
 
 
 def probe_opencv(env: Env) -> dict[str, Any]:
     #write your code here
-    pass
+    src = "import cv2"
+
+    try:
+        cv2 = env.importer("cv2")
+    except Exception as e:
+        unknown(src, f"cv2 is not importable: {e}")
+
+    raw = getattr_path(cv2, "__version__")
+    counter = getattr_path(cv2, "cuda.getCudaEnabledDeviceCount")
+    if callable(counter):
+        devices = int(counter())
+        cuda_devices = devices
+
+        if bool(cuda_devices):
+            detail = f"CUDA build with {devices} device(s) available"
+        else:
+            detail = "the cv2.cuda namespace exists but reports no devices — this is a non-CUDA build"
+    else:
+        cuda_devices = None
+        detail = "no cv2.cuda namespace — a non-CUDA build, which is what JetPack ships"
+
+    return {
+        "value": raw,
+        "source": src,
+        "status": "ok" if raw else "unknown",
+        "cuda_devices": cuda_devices,
+        "cuda_enabled": bool(cuda_devices),
+        "detail": detail
+    }
 
 
 def probe_tensorrt(env: Env) -> dict[str, Any]:
     # write your code here
-    pass
+    src = "import tensorrt"
+
+    try:
+        trt = env.importer("tensorrt")
+    except Exception as e:
+        hint = ""
+        if env.python.prefix and env.python.prefix != env.python.base_prefix:
+            hint = " — you are inside a virtual environment, and TensorRT is a system package that a venv made without –system-site-packages cannot see"
+
+        unknown(src, f"tensorrt is not importable: {e}{hint}")
+
+    raw = getattr_path(trt, "__version__")
+    if not raw:
+        unknown(src, "tensorrt imported but exposes no __version__")
+
+    return {
+        "value": raw,
+        "source": src,
+        "status": "ok",
+        "line": major_minor(str(raw))
+    }
 
 
 def probe_l4t(env: Env) -> dict[str, Any]:
     # write your code here
-    pass
+    src = "/etc/nv_tegra_release"
+    raw = read_text(env.root, src)
+    if not raw:
+        unknown(src, "not a Jetson, or the L4T release file is absent")
+
+    release = _L4T_RELEASE.search(raw)
+    revision = _L4T_REVISION.search(raw)
+    if not release or not revision:
+        unknown(src, f"release file present but unparseable: {raw.splitlines()[0][:80]}")
+
+    version = f"{release.group(1)}.{revision.group(1)}"
+
+    return {
+        "value": version,
+        "source": src,
+        "status": "ok",
+        "line": major_minor(version),
+        "raw": raw.splitlines()[0]
+    }
+
 
 ## for debugging - uncomment the following lines for debugging.
 # if __name__ == "__main__":
