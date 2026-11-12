@@ -15,8 +15,8 @@
     "block_align": 2,
     "byte_rate": 88200,
     "data_bytes": 882000,
-    "header_bytes": 44,
-    "total_bytes": 882044
+    "total_bytes": 882044,
+    "header_bytes": 44
   },
   "level_report": {
     "peak": 0.05423139133884701,
@@ -76,7 +76,7 @@
     ]
   },
   "verdicts": {
-    "level_sentence": "peak -25.31 dBFS, RMS -51.01 dBFS, crest 25.70 dB",
+    "level_sentence": "peak -25.31 dBFS, RMS -51.01 dBFS, crest  25.70 dB",
     "record_sentence": "3 of 13 choices are named; 10 missing (device_name, capture_gain, mic_distance_cm, mic_polar_pattern, room_acoustic_treatment, ambient_noise_level, preamp_model, filter_highpass_hz, target_signal_type, operator_notes)"
   }
 }
